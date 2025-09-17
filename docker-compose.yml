@@ -10,6 +10,7 @@ services:
       - SUPABASE_ACCESS_TOKEN=${SUPABASE_ACCESS_TOKEN}
       - PORT=3000
       - NODE_ENV=production
+      - WRAPPER_MODE=simple  # Use 'simple' for n8n or 'full' for SSE support
     restart: unless-stopped
     networks:
       - mcp-network

@@ -38,36 +38,50 @@ docker-compose up -d
 
 ## n8n Integration
 
-### Using HTTP Request Node (Recommended)
+The server now includes two modes:
+- **Simple mode** (default): Optimized for n8n with straightforward endpoints
+- **Full mode**: Complete SSE support for advanced use cases
+
+### Using Simple Mode (Recommended for n8n)
+
+#### Execute MCP Commands
 1. Add an HTTP Request node
-2. Set URL to: `http://your-server-ip:3456/webhook`
+2. Set URL to: `http://your-server-ip:3456/execute`
 3. Method: POST
 4. Body Type: JSON
 5. Body:
 ```json
 {
-  "method": "initialize",
+  "method": "call_tool",
   "params": {
-    "protocolVersion": "2024-11-05",
-    "capabilities": {},
-    "clientInfo": {
-      "name": "n8n",
-      "version": "1.0.0"
+    "name": "sql_query",
+    "arguments": {
+      "query": "SELECT * FROM users LIMIT 10"
     }
   }
 }
 ```
 
-### Available Methods
-- `initialize` - Initialize the MCP connection
-- `list_tools` - List available Supabase tools
-- `call_tool` - Execute a specific tool
+#### Simple Mode Endpoints
+- `POST /execute` - Execute any MCP method (auto-initializes)
+- `GET /tools` - List all available Supabase tools
+- `GET /health` - Check server status
 
-### Using SSE (for streaming)
-The `/stream` endpoint provides Server-Sent Events with:
-- Automatic heartbeat to prevent timeout
-- Parsed JSON responses when available
-- Connection status messages
+### Available Methods
+- `list_tools` - List available Supabase tools
+- `call_tool` - Execute a specific tool (see example above)
+
+### Switching Modes
+To use full SSE mode, change `WRAPPER_MODE` in docker-compose.yml:
+```yaml
+environment:
+  - WRAPPER_MODE=full  # Enable SSE support
+```
+
+Full mode endpoints:
+- `/webhook` - Simplified POST endpoint
+- `/stream` - Server-Sent Events with heartbeat
+- `/rpc` - Full JSON-RPC interface
 
 ## Docker Commands
 
