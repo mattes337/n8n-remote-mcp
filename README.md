@@ -32,15 +32,42 @@ docker-compose up -d
 
 - **Health Check**: `GET http://localhost:3456/health`
 - **Server Info**: `GET http://localhost:3456/info`
-- **JSON-RPC**: `POST http://localhost:3456/rpc`
-- **SSE Stream**: `GET http://localhost:3456/stream`
+- **JSON-RPC**: `POST http://localhost:3456/rpc` - Full JSON-RPC interface
+- **Webhook**: `POST http://localhost:3456/webhook` - Simplified endpoint for n8n
+- **SSE Stream**: `GET http://localhost:3456/stream` - Server-sent events with heartbeat
 
 ## n8n Integration
 
-Connect to the MCP server from n8n using:
-- Base URL: `http://your-server-ip:3456`
-- Use the `/rpc` endpoint for JSON-RPC requests
-- Use the `/stream` endpoint for SSE streaming
+### Using HTTP Request Node (Recommended)
+1. Add an HTTP Request node
+2. Set URL to: `http://your-server-ip:3456/webhook`
+3. Method: POST
+4. Body Type: JSON
+5. Body:
+```json
+{
+  "method": "initialize",
+  "params": {
+    "protocolVersion": "2024-11-05",
+    "capabilities": {},
+    "clientInfo": {
+      "name": "n8n",
+      "version": "1.0.0"
+    }
+  }
+}
+```
+
+### Available Methods
+- `initialize` - Initialize the MCP connection
+- `list_tools` - List available Supabase tools
+- `call_tool` - Execute a specific tool
+
+### Using SSE (for streaming)
+The `/stream` endpoint provides Server-Sent Events with:
+- Automatic heartbeat to prevent timeout
+- Parsed JSON responses when available
+- Connection status messages
 
 ## Docker Commands
 
