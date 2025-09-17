@@ -7,6 +7,13 @@ const EventSource = require('eventsource');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Middleware to log all requests
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+  console.log('Headers:', JSON.stringify(req.headers, null, 2));
+  next();
+});
+
 // Enable CORS for n8n
 app.use(cors());
 app.use(bodyParser.json());
@@ -222,65 +229,137 @@ app.post('/webhook', async (req, res) => {
 
 // SSE endpoint for streaming responses
 app.get('/stream', (req, res) => {
-  console.log('SSE client connected');
+  console.log('====== SSE CLIENT CONNECTED ======');
+  console.log('Request headers:', JSON.stringify(req.headers, null, 2));
+  console.log('Client IP:', req.ip);
+  console.log('User Agent:', req.get('user-agent'));
+
+  // Log connection state
+  let connectionActive = true;
+  let heartbeatCount = 0;
+  let dataWritten = 0;
 
   // Set proper SSE headers
+  console.log('Setting SSE headers...');
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
   res.setHeader('X-Accel-Buffering', 'no'); // Disable proxy buffering
 
+  console.log('Headers set, response status:', res.statusCode);
+
   // Send SSE comment to establish connection
+  console.log('Writing initial :ok comment...');
   res.write(':ok\n\n');
+  dataWritten++;
+  console.log(`Data written ${dataWritten}: :ok`);
 
   // Send heartbeat every 15 seconds to keep connection alive
   const heartbeatInterval = setInterval(() => {
-    res.write(':heartbeat\n\n');
+    if (connectionActive) {
+      heartbeatCount++;
+      console.log(`Sending heartbeat #${heartbeatCount}...`);
+      try {
+        res.write(':heartbeat\n\n');
+        dataWritten++;
+        console.log(`Data written ${dataWritten}: heartbeat #${heartbeatCount}`);
+      } catch (err) {
+        console.error('Error writing heartbeat:', err);
+        connectionActive = false;
+      }
+    }
   }, 15000);
 
   // Send initial connection message in SSE format
-  res.write(`data: ${JSON.stringify({ type: 'connected', timestamp: Date.now() })}\n\n`);
+  console.log('Writing initial connection message...');
+  const connectMsg = JSON.stringify({ type: 'connected', timestamp: Date.now() });
+  try {
+    res.write(`data: ${connectMsg}\n\n`);
+    dataWritten++;
+    console.log(`Data written ${dataWritten}: ${connectMsg}`);
+  } catch (err) {
+    console.error('Error writing connection message:', err);
+  }
 
   // Handle MCP stdout stream
   const streamHandler = (data) => {
+    console.log('=== MCP STDOUT DATA RECEIVED ===');
+    console.log('Raw data:', data.toString());
+
     try {
       const message = data.toString();
       // Send each line of output as a separate SSE event
       const lines = message.split('\n').filter(line => line.trim());
+      console.log(`Processing ${lines.length} lines...`);
+
       for (const line of lines) {
+        console.log(`Processing line: "${line}"`);
         try {
           // Try to parse as JSON first
           const jsonData = JSON.parse(line);
-          res.write(`data: ${JSON.stringify({ type: 'json', content: jsonData, timestamp: Date.now() })}\n\n`);
+          const jsonMsg = JSON.stringify({ type: 'json', content: jsonData, timestamp: Date.now() });
+          console.log(`Sending JSON SSE: ${jsonMsg}`);
+          res.write(`data: ${jsonMsg}\n\n`);
+          dataWritten++;
+          console.log(`Data written ${dataWritten}: JSON message`);
         } catch {
           // If not JSON, send as plain text
-          res.write(`data: ${JSON.stringify({ type: 'text', content: line, timestamp: Date.now() })}\n\n`);
+          const textMsg = JSON.stringify({ type: 'text', content: line, timestamp: Date.now() });
+          console.log(`Sending text SSE: ${textMsg}`);
+          res.write(`data: ${textMsg}\n\n`);
+          dataWritten++;
+          console.log(`Data written ${dataWritten}: text message`);
         }
       }
     } catch (error) {
-      console.error('Stream error:', error);
-      res.write(`data: ${JSON.stringify({ type: 'error', message: error.message, timestamp: Date.now() })}\n\n`);
+      console.error('Stream handler error:', error);
+      const errorMsg = JSON.stringify({ type: 'error', message: error.message, timestamp: Date.now() });
+      res.write(`data: ${errorMsg}\n\n`);
+      dataWritten++;
+      console.log(`Data written ${dataWritten}: error message`);
     }
   };
 
+  console.log('Checking mcpStdio.stdout...');
   if (mcpStdio.stdout) {
+    console.log('mcpStdio.stdout exists, attaching stream handler...');
     mcpStdio.stdout.on('data', streamHandler);
+    console.log('Stream handler attached');
+  } else {
+    console.error('WARNING: mcpStdio.stdout is null or undefined!');
   }
+
+  // Log response state periodically
+  const stateInterval = setInterval(() => {
+    if (connectionActive) {
+      console.log(`[SSE State] Connection active, data written: ${dataWritten}, heartbeats: ${heartbeatCount}`);
+    }
+  }, 30000);
 
   // Clean up on client disconnect
   req.on('close', () => {
-    console.log('SSE client disconnected');
+    console.log('====== SSE CLIENT DISCONNECTED ======');
+    console.log(`Total data written: ${dataWritten}`);
+    console.log(`Total heartbeats sent: ${heartbeatCount}`);
+    connectionActive = false;
     clearInterval(heartbeatInterval);
+    clearInterval(stateInterval);
     if (mcpStdio.stdout) {
       mcpStdio.stdout.removeListener('data', streamHandler);
+      console.log('Stream handler removed');
     }
   });
 
   // Handle errors
   req.on('error', (err) => {
-    console.error('SSE connection error:', err);
+    console.error('====== SSE CONNECTION ERROR ======');
+    console.error('Error details:', err);
+    connectionActive = false;
     clearInterval(heartbeatInterval);
+    clearInterval(stateInterval);
   });
+
+  console.log('SSE endpoint setup complete');
 });
 
 // Start server
